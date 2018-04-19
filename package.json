@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "repository": {
     "type": "git",
@@ -15,5 +15,9 @@
   "bugs": {
     "url": "https://github.com/Tape-Roll/population-visualizations-data-cleaner/issues"
   },
-  "homepage": "https://github.com/Tape-Roll/population-visualizations-data-cleaner#readme"
+  "homepage": "https://github.com/Tape-Roll/population-visualizations-data-cleaner#readme",
+  "dependencies": {
+    "csvtojson": "^1.1.9",
+    "mongoose": "^5.0.13"
+  }
 }
