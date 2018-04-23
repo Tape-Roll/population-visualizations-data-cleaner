@@ -11,22 +11,16 @@ mongoose.connect("mongodb://127.0.0.1/population").catch(err => {
 const stateSchema = mongoose.Schema({
     name: { type: String, unique: true },
     state_id: Number,
-    years: [
-        {
-            year: Number,
-            statisticsTable: {}
-        }
-    ],
+    years: {},
+    total_pop: Number,
+    median_age: Number,
     counties: [
         {
             name: String,
             county_id: Number,
-            years: [
-                {
-                    year: Number,
-                    statisticsTable: {}
-                }
-            ]
+            years: {},
+            total_pop: Number,
+            median_age: Number
         }
     ]
 });
@@ -41,14 +35,16 @@ let year = process.argv[3];
 let mappingFile = "";
 let locality = "";
 
+let promises = [];
+
 if (state === "-s") {
     state = true;
-    console.log("Parsing state data for " + year);
+    // console.log("Parsing state data for " + year);
     mappingFile = "./data/state_mappings.csv";
     locality = "state";
 } else {
     state = false;
-    console.log("Parsing county data for " + year);
+    // console.log("Parsing county data for " + year);
     mappingFile = "./data/county_mappings.csv";
     locality = "county";
 }
@@ -57,8 +53,9 @@ csv({ noheader: true })
     .fromFile(mappingFile)
     .on("csv", csvRow => {})
     .on("json", json => {
-        // console.log(json);
         if (!json.field1.includes("MOE")) {
+            json.field2 = json.field2.split("Population 1 year and over").join("pop");
+            json.field2 = json.field2.split(".").join("");
             mappings[json.field1] = json.field2;
         }
     })
@@ -84,6 +81,7 @@ csv({ noheader: false })
             obj.stateName = name.split(", ")[1];
             obj.name = name.split(", ")[0];
         }
+        obj.year = {};
 
         Object.keys(json).forEach(key => {
             if (mappings[key] !== undefined) {
@@ -110,15 +108,41 @@ csv({ noheader: false })
                     }
                 }
                 let category = categories[index];
-                if (category === "Population 1 year and over") {
+                if (category === "pop") {
+                    var checkObj = obj.year;
                     // Population
-                    obj.total_pop = json[key];
+                    if (movedFrom !== "") {
+                        if (json[key] !== "-") {
+                            checkObj["total_" + movedFrom] = json[key];
+                        } else {
+                            checkObj["total_" + movedFrom] = -1;
+                        }
+                    } else {
+                        if (json[key] !== "-") {
+                            checkObj["total_pop"] = json[key];
+                        } else {
+                            checkObj["total_pop"] = -1;
+                        }
+                    }
                 } else if (category.includes("AGE")) {
                     // Age
                     splitAndAssign(json, key, obj, category, "age", movedFrom);
                 } else if (category.includes("Median age (years)")) {
-                    // Median age
-                    obj.median_age = json[key];
+                    var checkObj = obj.year;
+                    // Population
+                    if (movedFrom !== "") {
+                        if (json[key] !== "-") {
+                            checkObj["median_" + movedFrom] = json[key];
+                        } else {
+                            checkObj["median_" + movedFrom] = -1;
+                        }
+                    } else {
+                        if (json[key] !== "-") {
+                            checkObj["median_pop"] = json[key];
+                        } else {
+                            checkObj["median_pop"] = -1;
+                        }
+                    }
                 } else if (category.includes("SEX")) {
                     // Gender
                     splitAndAssign(json, key, obj, category, "gender", movedFrom);
@@ -144,88 +168,76 @@ csv({ noheader: false })
             }
         });
 
+        // console.log(obj);
+
         data[json.GEO["display-label"]] = obj;
     })
     .on("done", () => {
-        //parsing finished
+        // parsing finished
         Object.keys(data).forEach(key => {
-            console.log("Processing " + key);
             let obj = data[key];
             let update = {};
             let query = {};
-
             if (state) {
-                update = {
-                    $push: {
-                        years: { year: year, statisticsTable: obj.year }
-                    }
+                update = { $set: {} };
+                update.$set[`years.${year}`] = {
+                    statisticsTable: obj.year
                 };
-
                 query = {
                     name: obj.name
                 };
             } else {
-                update = {
-                    $addToSet: {
-                        "counties.$.years": {
-                            year: year,
-                            statisticsTable: obj.year
-                        }
-                    }
-                };
+                update = {};
+                update["counties.$.years." + year] = { statisticsTable: obj.year };
                 query.name = obj.stateName;
                 query["counties.name"] = obj.name;
             }
-
             // Find the document
-            State.findOneAndUpdate(query, update)
-                .then(function(result) {
-                    // If the document doesn't exist
-                    if (result == null) {
-                        // Create it
-                        if (state) {
-                            result = new State({
-                                name: obj.name,
-                                state_id: obj.state_id,
-                                years: [
-                                    {
-                                        year: year,
-                                        statisticsTable: obj.year
-                                    }
-                                ],
-                                counties: []
-                            });
-                            console.log("Adding " + key);
-                            result.save().catch(e => {
-                                console.log(e);
-                            });
-                        } else {
-                            console.log("Adding county");
-                            State.findOneAndUpdate(
-                                { name: obj.stateName },
-                                {
-                                    $addToSet: {
-                                        counties: {
-                                            name: obj.name,
-                                            county_id: obj.county_id,
-                                            years: [
-                                                {
-                                                    year: year,
-                                                    statisticsTable: obj.year
+            promises.push(
+                State.findOneAndUpdate(query, update)
+                    .then(function(result) {
+                        // If the document doesn't exist
+                        if (result == null) {
+                            // Create it
+                            if (state) {
+                                result = new State({
+                                    name: obj.name,
+                                    state_id: obj.state_id,
+                                    counties: []
+                                });
+                                console.log("Adding " + key);
+                                result.save().catch(e => {
+                                    console.log(e);
+                                });
+                            } else {
+                                console.log("Adding county");
+                                promises.push(
+                                    State.findOneAndUpdate(
+                                        { name: obj.stateName },
+                                        {
+                                            $addToSet: {
+                                                counties: {
+                                                    name: obj.name,
+                                                    county_id: obj.county_id
                                                 }
-                                            ]
+                                            }
                                         }
-                                    }
-                                }
-                            ).catch(err => {
-                                console.log(err);
-                            });
+                                    ).catch(err => {
+                                        console.log(err);
+                                    })
+                                );
+                            }
                         }
-                    }
-                })
-                .catch(error => {
-                    console.log(error);
-                });
+                    })
+                    .catch(error => {
+                        console.log(error);
+                    })
+            );
+        });
+
+        Promise.all(promises).then(function() {
+            console.log(`DoneDone ${year} ${state ? "State" : "County"}`);
+            process.exit();
         });
     });
 
@@ -258,6 +270,10 @@ function splitAndAssign(json, key, obj, category, categoryName, moved, multi_lev
     }
 
     if (cats[index] !== undefined) {
-        obj[categoryName][cats[index]] = json[key];
+        if (json[key] === "-") {
+            obj[categoryName][cats[index]] = -1;
+        } else {
+            obj[categoryName][cats[index]] = json[key];
+        }
     }
 }
