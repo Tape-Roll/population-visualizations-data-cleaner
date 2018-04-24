@@ -40,14 +40,15 @@ let promises = [];
 if (state === "-s") {
     state = true;
     // console.log("Parsing state data for " + year);
-    mappingFile = "./data/state_mappings.csv";
+    mappingFile = "./data/" + year + "_state_mappings.csv";
     locality = "state";
 } else {
     state = false;
     // console.log("Parsing county data for " + year);
-    mappingFile = "./data/county_mappings.csv";
+    mappingFile = "./data/" + year + "_county_mappings.csv";
     locality = "county";
 }
+console.log(locality);
 
 csv({ noheader: true })
     .fromFile(mappingFile)
@@ -61,6 +62,7 @@ csv({ noheader: true })
     })
     .on("done", () => {
         //parsing finished
+        console.log(mappings);
     });
 
 csv({ noheader: false })
@@ -107,6 +109,7 @@ csv({ noheader: false })
                             break;
                     }
                 }
+
                 let category = categories[index];
                 if (category === "pop") {
                     var checkObj = obj.year;
@@ -251,7 +254,12 @@ function splitAndAssign(json, key, obj, category, categoryName, moved, multi_lev
 
     let index = 1;
 
-    if (multi_level.includes(cats[1])) {
+    if (cats[0] === "pop") {
+        console.log(category);
+        index++;
+    }
+
+    if (multi_level.includes(cats[index])) {
         index++;
     }
 
